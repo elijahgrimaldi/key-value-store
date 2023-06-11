@@ -1,4 +1,5 @@
 const express = require("express")
+const http = require('http')
 const bodyParser = require("body-parser")
 const app = express()
 app.use(bodyParser.urlencoded({extended : true}))
@@ -9,6 +10,8 @@ function checkFind(object, key) {
     var result = object[key];
     return (typeof result !== "undefined") ? true : false;
 }
+
+if (!process.env.FORWARDING_ADDRESS){
 
 main().catch(err => console.log(err));
 
@@ -100,8 +103,96 @@ async function main() {
 
 
 
-    app.listen(3000,function(){
-        console.log("Server started on port 3000")
+    app.listen(8090,function(){
+        console.log("Running main on port 8082")
     })
 
+}
+//-------------------------------------------------------PROXY-------------------------------------------------------------
+
+} else{
+//     https.get('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY', (resp) => {
+//     let data = '';
+
+//     // A chunk of data has been received.
+//     resp.on('data', (chunk) => {
+//     data += chunk;
+//   });
+// })
+app.route("/hello")
+    .get(function(req,res){
+        const options = {
+            hostname: '10.10.0.2',
+            port: 8090,
+            path: '/hello'
+          };
+          const reqst = http.request(options, (resp) => {
+            let data = ''
+             
+            resp.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            // Ending the response 
+            resp.on('end', () => {
+                res.send(JSON.parse(data))
+            });
+               
+        }).on("error", (err) => {
+            res.send("Error: ", err)
+        }).end()
+})
+//     app.route("/hello")
+//     .post(function(req,res){
+//         const options = {
+//             host: '10.10.0.2',
+//             port: 8082,
+//             path: '/hello',
+//             method: "POST"
+//           }
+          
+//           http.request(options, function(resp) {
+//             res.send(resp)
+//     })
+//     })
+
+
+//     app.route("/hello/:name")
+//     .post(function(req,res){
+
+//     })
+//     .get(function(req,res){
+//         const data = getSave("/hello/"+req.params.name)
+//         res.send(data)
+//     })
+
+    
+//     app.route("/test")
+//     .get(function(req,res){
+//         const data = getSave("/test")
+//         res.send(data)
+//     })
+//     .post(function(req,res){
+
+//     })
+
+
+//     app.route("/kvs/:key")
+//     .put(function(req,res){
+
+//     })
+//     .get(function(req,res){
+//         const data = getSave("/kvs/"+req.params.key)
+//         res.send(data)
+
+//     })
+//     .delete(function(req,res){
+
+//     })
+
+
+
+    app.listen(8090,function(){
+        console.log("Running proxy on port 8083")
+    })
 }
