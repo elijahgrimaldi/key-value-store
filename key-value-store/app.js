@@ -111,20 +111,14 @@ async function main() {
 //-------------------------------------------------------PROXY-------------------------------------------------------------
 
 } else{
-//     https.get('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY', (resp) => {
-//     let data = '';
 
-//     // A chunk of data has been received.
-//     resp.on('data', (chunk) => {
-//     data += chunk;
-//   });
-// })
 app.route("/hello")
     .get(function(req,res){
         const options = {
             hostname: '10.10.0.2',
             port: 8090,
-            path: '/hello'
+            path: '/hello',
+            method: 'GET'
           };
           const reqst = http.request(options, (resp) => {
             let data = ''
@@ -142,53 +136,205 @@ app.route("/hello")
             res.send("Error: ", err)
         }).end()
 })
-//     app.route("/hello")
-//     .post(function(req,res){
-//         const options = {
-//             host: '10.10.0.2',
-//             port: 8082,
-//             path: '/hello',
-//             method: "POST"
-//           }
-          
-//           http.request(options, function(resp) {
-//             res.send(resp)
-//     })
-//     })
+
+    .post(function(req,res){
+        const options = {
+            hostname: '10.10.0.2',
+            port: 8090,
+            path: '/hello',
+            method: 'POST'
+          };
+          const reqst = http.request(options, (resp) => {
+            let data = ''
+             
+            resp.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            // Ending the response 
+            resp.on('end', () => {
+                res.send(JSON.parse(data))
+            });
+               
+        }).on("error", (err) => {
+            res.send("Error: ", err)
+        }).end()
+    })
 
 
-//     app.route("/hello/:name")
-//     .post(function(req,res){
+    app.route("/hello/:name")
+    .post(function(req,res){
+        const options = {
+            hostname: '10.10.0.2',
+            port: 8090,
+            path: '/hello'+req.params.name,
+            method: 'POST'
+          };
+          const reqst = http.request(options, (resp) => {
+            let data = ''
+             
+            resp.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            // Ending the response 
+            resp.on('end', () => {
+                res.send(JSON.parse(data))
+            });
+               
+        }).on("error", (err) => {
+            res.send("Error: ", err)
+        }).end()
 
-//     })
-//     .get(function(req,res){
-//         const data = getSave("/hello/"+req.params.name)
-//         res.send(data)
-//     })
+    })
+    .get(function(req,res){
+        const options = {
+            hostname: '10.10.0.2',
+            port: 8090,
+            path: '/hello'+req.params.name,
+            method: 'GET'
+          };
+          const reqst = http.request(options, (resp) => {
+            let data = ''
+             
+            resp.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            // Ending the response 
+            resp.on('end', () => {
+                res.send(JSON.parse(data))
+            });
+               
+        }).on("error", (err) => {
+            res.send("Error: ", err)
+        }).end()
+    })
 
     
-//     app.route("/test")
-//     .get(function(req,res){
-//         const data = getSave("/test")
-//         res.send(data)
-//     })
-//     .post(function(req,res){
+    app.route("/test")
+    .get(function(req,res){
+        const options = {
+            hostname: '10.10.0.2',
+            port: 8090,
+            path: '/test',
+            method: 'GET'
+          };
+          const reqst = http.request(options, (resp) => {
+            let data = ''
+             
+            resp.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            // Ending the response 
+            resp.on('end', () => {
+                res.send(JSON.parse(data))
+            });
+               
+        }).on("error", (err) => {
+            res.send("Error: ", err)
+        }).end()
+    })
+    .post(function(req,res){
+        const options = {
+            hostname: '10.10.0.2',
+            port: 8090,
+            path: '/hello?msg='+req.query.msg,
+            method: 'POST'
+          };
+          const reqst = http.request(options, (resp) => {
+            let data = ''
+             
+            resp.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            // Ending the response 
+            resp.on('end', () => {
+                res.send(JSON.parse(data))
+            });
+               
+        }).on("error", (err) => {
+            res.send("Error: ", err)
+        }).end()
+    })
 
-//     })
 
+    app.route("/kvs/:key")
+    .put(function(req,res){
+        const options = {
+            hostname: '10.10.0.2',
+            port: 8090,
+            path: '/hello'+req.params.key,
+            method: 'PUT'
+          };
+          const reqst = http.request(options, (resp) => {
+            let data = ''
+             
+            resp.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            // Ending the response 
+            resp.on('end', () => {
+                res.send(JSON.parse(data))
+            });
+               
+        }).on("error", (err) => {
+            res.send("Error: ", err)
+        })
+        reqst.write(JSON.stringify(req.body));
 
-//     app.route("/kvs/:key")
-//     .put(function(req,res){
-
-//     })
-//     .get(function(req,res){
-//         const data = getSave("/kvs/"+req.params.key)
-//         res.send(data)
-
-//     })
-//     .delete(function(req,res){
-
-//     })
+        // End the request
+        reqst.end();
+    })
+    .get(function(req,res){
+        const options = {
+            hostname: '10.10.0.2',
+            port: 8090,
+            path: '/hello'+req.params.key,
+            method: 'GET'
+          };
+          const reqst = http.request(options, (resp) => {
+            let data = ''
+             
+            resp.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            // Ending the response 
+            resp.on('end', () => {
+                res.send(JSON.parse(data))
+            });
+               
+        }).on("error", (err) => {
+            res.send("Error: ", err)
+        }).end()
+    })
+    .delete(function(req,res){
+        const options = {
+            hostname: '10.10.0.2',
+            port: 8090,
+            path: '/hello'+req.params.key,
+            method: 'DELETE'
+          };
+          const reqst = http.request(options, (resp) => {
+            let data = ''
+             
+            resp.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            // Ending the response 
+            resp.on('end', () => {
+                res.send(JSON.parse(data))
+            });
+               
+        }).on("error", (err) => {
+            res.send("Error: ", err)
+        }).end()
+    })
 
 
 
