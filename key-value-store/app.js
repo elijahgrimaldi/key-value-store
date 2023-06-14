@@ -1,5 +1,5 @@
 const express = require("express")
-const http = require('http')
+const axios = require('axios')
 const bodyParser = require("body-parser")
 const app = express()
 app.use(bodyParser.urlencoded({extended : true}))
@@ -36,7 +36,7 @@ async function main() {
             "message":"Hi, "+req.params.name
         })
     })
-    .get(function(req,res){
+    .get(function(req,res,next){
         const err = new Error('Method Not Allowed');
         err.status = 405;
         next(err);
@@ -63,6 +63,7 @@ async function main() {
 
     app.route("/kvs/:key")
     .put(function(req,res){
+        console.log(req.body)
         if (req.params.key.length > 50){
             res.status(400).json({"error" : "Key is too long"})
         }else{
@@ -102,7 +103,6 @@ async function main() {
 
 
 
-
     app.listen(8090,function(){
         console.log("Running main on port 8082")
     })
@@ -114,228 +114,123 @@ async function main() {
 
 app.route("/hello")
     .get(function(req,res){
-        const options = {
-            hostname: '10.10.0.2',
-            port: 8090,
-            path: '/hello',
-            method: 'GET'
-          };
-          const reqst = http.request(options, (resp) => {
-            let data = ''
-             
-            resp.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            // Ending the response 
-            resp.on('end', () => {
-                res.send(JSON.parse(data))
-            });
-               
-        }).on("error", (err) => {
-            res.send("Error: ", err)
-        }).end()
-})
-
-    .post(function(req,res){
-        const options = {
-            hostname: '10.10.0.2',
-            port: 8090,
-            path: '/hello',
-            method: 'POST'
-          };
-          const reqst = http.request(options, (resp) => {
-            let data = ''
-             
-            resp.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            // Ending the response 
-            resp.on('end', () => {
-                res.send(JSON.parse(data))
-            });
-               
-        }).on("error", (err) => {
-            res.send("Error: ", err)
-        }).end()
+        axios.get('http://10.10.0.2:8090/hello')
+        .then(function (response) {
+            // handle success
+            res.status(response.status).send(response.data)
+        })
+        .catch(function (error) {
+            // handle error
+            res.send(error);
+        })
     })
 
+    .post(function(req, res) {
+        axios.post('http://10.10.0.2:8090/hello')
+        .then(function (response) {
+            // handle success
+            res.status(response.status).send(response.data)
+        })
+        .catch(function (error) {
+            // handle error
+            res.status(error.response.status).send(error.response.statusText)
+        })
+    })
 
     app.route("/hello/:name")
     .post(function(req,res){
-        const options = {
-            hostname: '10.10.0.2',
-            port: 8090,
-            path: '/hello'+req.params.name,
-            method: 'POST'
-          };
-          const reqst = http.request(options, (resp) => {
-            let data = ''
-             
-            resp.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            // Ending the response 
-            resp.on('end', () => {
-                res.send(JSON.parse(data))
-            });
-               
-        }).on("error", (err) => {
-            res.send("Error: ", err)
-        }).end()
-
+        axios.post('http://10.10.0.2:8090/hello/'+req.params.name)
+        .then(function (response) {
+            // handle success
+            res.status(response.status).send(response.data)
+        })
+        .catch(function (error) {
+            // handle error
+            res.send(error);
+        })
     })
     .get(function(req,res){
-        const options = {
-            hostname: '10.10.0.2',
-            port: 8090,
-            path: '/hello'+req.params.name,
-            method: 'GET'
-          };
-          const reqst = http.request(options, (resp) => {
-            let data = ''
-             
-            resp.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            // Ending the response 
-            resp.on('end', () => {
-                res.send(JSON.parse(data))
-            });
-               
-        }).on("error", (err) => {
-            res.send("Error: ", err)
-        }).end()
+        axios.get('http://10.10.0.2:8090/hello/'+req.params.name)
+        .then(function (response) {
+            // handle success
+            res.status(response.status).send(response.data)
+        })
+        .catch(function (error) {
+            // handle error
+            res.status(error.response.status).send(error.response.statusText)
+        })
     })
 
     
     app.route("/test")
     .get(function(req,res){
-        const options = {
-            hostname: '10.10.0.2',
-            port: 8090,
-            path: '/test',
-            method: 'GET'
-          };
-          const reqst = http.request(options, (resp) => {
-            let data = ''
-             
-            resp.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            // Ending the response 
-            resp.on('end', () => {
-                res.send(JSON.parse(data))
-            });
-               
-        }).on("error", (err) => {
-            res.send("Error: ", err)
-        }).end()
+        axios.get('http://10.10.0.2:8090/test')
+        .then(function (response) {
+            // handle success
+            res.status(response.status).send(response.data)
+        })
+        .catch(function (error) {
+            // handle error
+            res.send(error);
+        })
     })
     .post(function(req,res){
-        const options = {
-            hostname: '10.10.0.2',
-            port: 8090,
-            path: '/hello?msg='+req.query.msg,
-            method: 'POST'
-          };
-          const reqst = http.request(options, (resp) => {
-            let data = ''
-             
-            resp.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            // Ending the response 
-            resp.on('end', () => {
-                res.send(JSON.parse(data))
-            });
-               
-        }).on("error", (err) => {
-            res.send("Error: ", err)
-        }).end()
+        if (typeof(req.query.msg) !== 'undefined'){
+            var newPath = '/test?msg='+req.query.msg
+        }else{
+            var newPath = '/test'
+            }
+            axios.post('http://10.10.0.2:8090'+newPath)
+            .then(function (response) {
+                // handle success
+                res.status(response.status).send(response.data)
+            })
+            .catch(function (error) {
+                // handle error
+                res.status(error.response.status).send(error.response.statusText)
+            })
     })
 
 
     app.route("/kvs/:key")
     .put(function(req,res){
-        const options = {
-            hostname: '10.10.0.2',
-            port: 8090,
-            path: '/hello'+req.params.key,
-            method: 'PUT'
-          };
-          const reqst = http.request(options, (resp) => {
-            let data = ''
-             
-            resp.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            // Ending the response 
-            resp.on('end', () => {
-                res.send(JSON.parse(data))
-            });
-               
-        }).on("error", (err) => {
-            res.send("Error: ", err)
+        console.log(typeof(req.body))
+        axios.put('http://10.10.0.2:8090/kvs/'+req.params.key, req.body,{
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }})
+        .then(function (response) {
+            // handle success
+            res.status(response.status).send(response.data)
         })
-        reqst.write(JSON.stringify(req.body));
-
-        // End the request
-        reqst.end();
+        .catch(function (error) {
+            // handle error
+            console.log(error)
+            res.status(error.response.status).send(error.response.data)
+        })
     })
     .get(function(req,res){
-        const options = {
-            hostname: '10.10.0.2',
-            port: 8090,
-            path: '/hello'+req.params.key,
-            method: 'GET'
-          };
-          const reqst = http.request(options, (resp) => {
-            let data = ''
-             
-            resp.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            // Ending the response 
-            resp.on('end', () => {
-                res.send(JSON.parse(data))
-            });
-               
-        }).on("error", (err) => {
-            res.send("Error: ", err)
-        }).end()
+        axios.get('http://10.10.0.2:8090/kvs/'+req.params.key)
+        .then(function (response) {
+            // handle success
+            res.status(response.status).send(response.data)
+        })
+        .catch(function (error) {
+            // handle error
+            res.status(error.response.status).send(error.response.data)
+        })
     })
     .delete(function(req,res){
-        const options = {
-            hostname: '10.10.0.2',
-            port: 8090,
-            path: '/hello'+req.params.key,
-            method: 'DELETE'
-          };
-          const reqst = http.request(options, (resp) => {
-            let data = ''
-             
-            resp.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            // Ending the response 
-            resp.on('end', () => {
-                res.send(JSON.parse(data))
-            });
-               
-        }).on("error", (err) => {
-            res.send("Error: ", err)
-        }).end()
+        axios.delete('http://10.10.0.2:8090/kvs/'+req.params.key)
+        .then(function (response) {
+            // handle success
+            res.status(response.status).send(response.data)
+        })
+        .catch(function (error) {
+            // handle error
+            res.status(error.response.status).send(error.response.data);
+        })
     })
-
 
 
     app.listen(8090,function(){
