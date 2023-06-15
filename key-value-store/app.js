@@ -2,6 +2,7 @@ const express = require("express")
 const axios = require('axios')
 const bodyParser = require("body-parser")
 const Docker = require('dockerode')
+const e = require("express")
 const app = express()
 app.use(bodyParser.urlencoded({extended : true}))
 const key_store = {}
@@ -12,6 +13,8 @@ function checkFind(object, key) {
     return (typeof result !== "undefined") ? true : false;
 }
 function causalConsistent(metadata){
+    //finds the order of the events by comparing causal metadata
+    //if the data is not consistent with the causal order it returns an error
     let sameVector = null
     let lessThan = null
     for (i=0;i<metadata.length;i++){
@@ -43,6 +46,7 @@ function causalConsistent(metadata){
 
 
 function broadcastReplicate(dataBody,route){
+    //broadcasts the data to every replica and checks if they are down and if so then it broadcasts a delete request for that replica node
     for (let i = 0; i < view.length; i++) {
         const address = Object.keys(view)[i];
         if (address === ipAddress) {
@@ -53,8 +57,45 @@ function broadcastReplicate(dataBody,route){
         'Content-Type': 'application/x-www-form-urlencoded'
         }})
         .then(function (response) {
+            if (response.status===503){
+                setTimeout(() => {
+                    console.log("Delayed for 1 second.");
+                  }, "1000");
+                  axios.put(address+route,{"value":dataBod.value,"broadcast":true},{
+                    headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                    }})
+                    .then(function(req,res){
+                        res.status(response.status).send(response.data)
+                    })
+                    .catch(function (error) {
+                        // handle error
+                        res.status(error.response.status).send(error.response.data);
+                    })
+            }else if (response.status===500){
+                for (let i = 0; i < view.length; i++) {
+                    const address = Object.keys(view)[i];
+                    if (address === ipAddress) {
+                    continue;
+                    }
+                //broadcasts a delete from the view, different from broadcastDelete() function
+                axios.delete(address+"\view", {"socket-address":address,"broadcast":true},{
+                    headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                    }})
+                    .then(function (response) {
+                        // handle success
+                        res.status(response.status).send(response.data)
+                    })
+                    .catch(function (error) {
+                        // handle error
+                        res.status(error.response.status).send(error.response.data);
+                    })
+                }
+            }else{
             // handle success
             res.status(response.status).send(response.data)
+            }
         })
         .catch(function (error) {
             // handle error
@@ -65,6 +106,7 @@ function broadcastReplicate(dataBody,route){
 }
 
 function broadcastDelete(route){
+    //broadcasts a delete in the key value store 
     for (let i = 0; i < view.length; i++) {
         const address = Object.keys(view)[i];
         if (address === ipAddress) {
@@ -345,7 +387,7 @@ async function main() {
                 res.status(200).json({"result":"already present"})
             }else{
             vectorClock.push(0)
-            view[req.body.sock-address] = vectorClock.length -1
+            view[req.body.socket-address] = vectorClock.length -1
             res.status(201).json({"result":"added"})
             }
         }else{
