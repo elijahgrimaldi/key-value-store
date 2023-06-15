@@ -11,6 +11,77 @@ function checkFind(object, key) {
     var result = object[key];
     return (typeof result !== "undefined") ? true : false;
 }
+function causalConsistent(metadata){
+    let sameVector = null
+    let lessThan = null
+    for (i=0;i<metadata.length;i++){
+        if (metadata[i]===vectorClock[i]){
+            continue
+        }else{
+            sameVector = false
+            if (metadata[i]<vectorClock[i]){
+                continue
+            }else{
+                lessThan = false
+            }
+        }
+    }
+    if (sameVector === null){
+        sameVector = true
+    }
+    if (lessThan === null){
+        lessThan = true
+    }
+    if (sameVector === false && lessThan === true){
+        return true
+    }else if (sameVector === true && lessThan === false){
+        return 2
+    }else {
+        return false
+    }
+}
+
+
+function broadcastReplicate(dataBody,route){
+    for (let i = 0; i < view.length; i++) {
+        const address = Object.keys(view)[i];
+        if (address === ipAddress) {
+        continue;
+        }
+    axios.put(address+route,{"value":dataBod.value,"broadcast":true},{
+        headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+        }})
+        .then(function (response) {
+            // handle success
+            res.status(response.status).send(response.data)
+        })
+        .catch(function (error) {
+            // handle error
+            res.status(error.response.status).send(error.response.data);
+        })
+    }
+
+}
+
+function broadcastDelete(route){
+    for (let i = 0; i < view.length; i++) {
+        const address = Object.keys(view)[i];
+        if (address === ipAddress) {
+        continue;
+        }
+    axios.delete(address+route, {"broadcast":true})
+        .then(function (response) {
+            // handle success
+            res.status(response.status).send(response.data)
+        })
+        .catch(function (error) {
+            // handle error
+            res.status(error.response.status).send(error.response.data);
+        })
+    }
+
+}
 
 // if (!process.env.FORWARDING_ADDRESS){
 
@@ -345,23 +416,40 @@ async function main() {
 
     app.route("/kvs/:key")
     .put(function(req,res){
-        console.log(req.body)
-        if (req.params.key.length > 50){
-            res.status(400).json({"error" : "Key is too long"})
-        }else{
-            if (!checkFind(req.body,"value")){
-                res.status(400).json({"error" : "PUT request does not specify a value"})
+        const causality = causalConsistent(req.body.causal-metadata)
+        if (causality === true){
+            vectorClock[view[ipAddress]] += 1
+            if (req.params.key.length > 50){
+                res.status(400).json({"error" : "Key is too long"})
             }else{
-            
-            if (!checkFind(key_store, req.params.key)){
-                key_store[req.params.key] = req.body.value
-                res.status(201).json({"result" : "created"})
-            }else{
-                key_store[req.params.key] = req.body.value
-                res.status(200).json({"result" : "replaced"})
+                if (!checkFind(req.body,"value")){
+                    res.status(400).json({"error" : "PUT request does not specify a value"})
+                }else{
+                
+                if (!checkFind(key_store, req.params.key)){
+                    if (req.body.broadcast){
+                        key_store[req.params.key] = req.body.value
+                        res.status(201).json({"result" : "created"})
+                    }else{
+                        key_store[req.params.key] = req.body.value
+                        broadcastReplicate(req.body,"/kvs/"+req.params.key)
+                        res.status(201).json({"result" : "created"})
+                    }
+                }else{
+                    if(req.body.broadcast){
+                        key_store[req.params.key] = req.body.value
+                        res.status(200).json({"result" : "replaced"})
+                    }else{
+                        key_store[req.params.key] = req.body.value
+                        broadcastReplicate(req.body,"/kvs/"+req.params.key)
+                        res.status(200).json({"result" : "replaced"})
+                    }
+                }
             }
         }
-    }
+        }else if (causality ===false){
+            res.status(503).json({"error": "Causal dependencies not satisfied; try again later"})
+        }
     })
     .get(function(req,res){
         if (!checkFind(key_store, req.params.key)){
@@ -371,12 +459,24 @@ async function main() {
         }
     })
     .delete(function(req,res){
+        const causality = causalConsistent(req.body.causal-metadata)
+        if (causality === true){
+            vectorClock[view[ipAddress]] += 1
         if (!checkFind(key_store, req.params.key)){
             res.status(404).json({"error" : "Key does not exist"})
         } else{
+            if (req.body.broadcast){
             delete key_store[req.params.key]
             res.status(200).json({"result" : "deleted"})
+            }else{
+            delete key_store[req.params.key]
+            broadcastDelete("/kvs/"+req.params.key)
+            res.status(200).json({"result" : "deleted"})
+            }
         }
+    }else if (causality ===false){
+        res.status(503).json({"error": "Causal dependencies not satisfied; try again later"})
+    }
     })
 
     app.listen(8090,function(){
