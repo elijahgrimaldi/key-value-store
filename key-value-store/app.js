@@ -460,7 +460,6 @@ async function main() {
     .put(function(req,res){
         const causality = causalConsistent(req.body.causal-metadata)
         if (causality === true){
-            vectorClock[view[ipAddress]] += 1
             if (req.params.key.length > 50){
                 res.status(400).json({"error" : "Key is too long"})
             }else{
@@ -470,21 +469,25 @@ async function main() {
                 
                 if (!checkFind(key_store, req.params.key)){
                     if (req.body.broadcast){
+                        vectorClock[view[ipAddress]] += 1
                         key_store[req.params.key] = req.body.value
-                        res.status(201).json({"result" : "created"})
+                        res.status(201).json({"result" : "created","causal-metadata":vectorClock })
                     }else{
+                        vectorClock[view[ipAddress]] += 1
                         key_store[req.params.key] = req.body.value
                         broadcastReplicate(req.body,"/kvs/"+req.params.key)
-                        res.status(201).json({"result" : "created"})
+                        res.status(201).json({"result" : "created","causal-metadata":vectorClock})
                     }
                 }else{
                     if(req.body.broadcast){
+                        vectorClock[view[ipAddress]] += 1
                         key_store[req.params.key] = req.body.value
-                        res.status(200).json({"result" : "replaced"})
+                        res.status(200).json({"result" : "replaced","causal-metadata":vectorClock})
                     }else{
+                        vectorClock[view[ipAddress]] += 1
                         key_store[req.params.key] = req.body.value
                         broadcastReplicate(req.body,"/kvs/"+req.params.key)
-                        res.status(200).json({"result" : "replaced"})
+                        res.status(200).json({"result" : "replaced","causal-metadata":vectorClock})
                     }
                 }
             }
@@ -497,23 +500,25 @@ async function main() {
         if (!checkFind(key_store, req.params.key)){
             res.status(404).json({"error" : "Key does not exist"})
         } else{
-            res.status(200).json({"result" : "found", "value" : key_store[req.params.key]})
+            vectorClock[view[ipAddress]] += 1
+            res.status(200).json({"result" : "found", "value" : key_store[req.params.key], "causal-metadata":vectorClock})
         }
     })
     .delete(function(req,res){
         const causality = causalConsistent(req.body.causal-metadata)
         if (causality === true){
-            vectorClock[view[ipAddress]] += 1
         if (!checkFind(key_store, req.params.key)){
             res.status(404).json({"error" : "Key does not exist"})
         } else{
             if (req.body.broadcast){
+            vectorClock[view[ipAddress]] += 1
             delete key_store[req.params.key]
-            res.status(200).json({"result" : "deleted"})
+            res.status(200).json({"result" : "deleted","causal-metadata":vectorClock})
             }else{
+            vectorClock[view[ipAddress]] += 1
             delete key_store[req.params.key]
             broadcastDelete("/kvs/"+req.params.key)
-            res.status(200).json({"result" : "deleted"})
+            res.status(200).json({"result" : "deleted","causal-metadata":vectorClock})
             }
         }
     }else if (causality ===false){
