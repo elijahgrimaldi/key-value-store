@@ -15,37 +15,31 @@ const reviver = (key, value) => {
 app.use(bodyParser.json({ reviver }))
 const key_store = {}
 
-function causalConsistent(metadata){
-    //finds the order of the events by comparing causal metadata
-    //if the data is not consistent with the causal order it returns an error
-    let sameVector = null
-    let lessThan = null
-    for (i=0;i<metadata.length;i++){
-        if (metadata[i]===vectorClock[i]){
-            continue
-        }else{
-            sameVector = false
-            if (metadata[i]<vectorClock[i]){
-                continue
+function causalConsistent(metadata,senderPosition = undefined) {
+    let senderCheck = true;
+    console.log("Now using for causality" + metadata + " and " + vectorClock + " with " + senderPosition)
+    for (let i = 0; i < metadata.length; i++) {
+        if (senderPosition !== undefined && i === senderPosition) {
+            if (metadata[i] !== vectorClock[i] + 1) {
+            senderCheck = false;
+            break;
             }else{
-                lessThan = false
+                continue
             }
+      }
+        if (metadata[i] > vectorClock[i]) {
+            return false; // Found an element in metadata greater than the vectorClock, causal dependency not satisfied
+          }
+      }
+        if (senderCheck===true) {
+            return true; // Causal dependency satisfied or concurent
+        } else {
+            return false; // Causal dependency not satisfied
         }
     }
-    if (sameVector === null){
-        sameVector = true
-    }
-    if (lessThan === null){
-        lessThan = true
-    }
-    if (sameVector === false && lessThan === true){
-        return true
-    }else if (sameVector === true && lessThan === false){
-        return 2
-    }else {
-        return false
-    }
-}
+
+  
+
 
 function maxVectorClock(v1,v2){
     if (v2==0){
@@ -61,69 +55,8 @@ function maxVectorClock(v1,v2){
 }
 
 
-// function broadcastReplicate(dataBody,route){
-//     //broadcasts the data to every replica and checks if they are down and if so then it broadcasts a delete request for that replica node
-//     for (let i = 0; i < view.length; i++) {
-//         const address = Object.keys(view)[i];
-//         if (address === ipAddress) {
-//         continue;
-//         }
-//     axios.put(address+route,{"value":dataBody.value,"broadcast":true},{
-//         headers: {
-//         // 'Content-Type': 'application/x-www-form-urlencoded'
-//         'Content-Type': 'application/json'
-//         }})
-//         .then(function (response) {
-//             if (response.status===503){
-//                 setTimeout(() => {
-//                     console.log("Delayed for 1 second.");
-//                   }, "1000");
-//                   axios.put(address+route,{"value":dataBody.value,"broadcast":true},{
-//                     headers: {
-//                     // 'Content-Type': 'application/x-www-form-urlencoded'
-//                     'Content-Type': 'application/json'
-//                     }})
-//                     .then(function(req,res){
-//                         res.status(response.status).send(response.data)
-//                     })
-//                     .catch(function (error) {
-//                         // handle error
-//                         res.status(error.response.status).send(error.response.data);
-//                     })
-//             }else if (response.status===500){
-//                 for (let i = 0; i < view.length; i++) {
-//                     const address = Object.keys(view)[i];
-//                     if (address === ipAddress) {
-//                     continue;
-//                     }
-//                 //broadcasts a delete from the view, different from broadcastDelete() function
-//                 axios.delete(address+"\view", {"socket-address":address,"broadcast":true},{
-//                     headers: {
-//                     // 'Content-Type': 'application/x-www-form-urlencoded'
-//                     'Content-Type': 'application/json'
-//                     }})
-//                     .then(function (response) {
-//                         // handle success
-//                         res.status(response.status).send(response.data)
-//                     })
-//                     .catch(function (error) {
-//                         // handle error
-//                         res.status(error.response.status).send(error.response.data);
-//                     })
-//                 }
-//             }else{
-//             // handle success
-//             res.status(response.status).send(response.data)
-//             }
-//         })
-//         .catch(function (error) {
-//             // handle error
-//             res.status(error.response.status).send(error.response.data);
-//         })
-//     }
 
-// }
-function broadcastReplicate(dataBody, route, view, metadata,node) {
+function broadcastReplicate(dataBody, route, view, metadata,sender) {
     const promises = [];
     keys = Object.keys(view)
     for (let i = 0; i < keys.length; i++) {
@@ -132,7 +65,7 @@ function broadcastReplicate(dataBody, route, view, metadata,node) {
         continue;
       }
       const promise = axios
-        .put("http://" + address + route, { "value": dataBody.value, "causal-metadata": metadata,"broadcast": true, "node":node }, {
+        .put("http://" + address + route, { "value": dataBody.value, "causal-metadata": metadata,"broadcast": true, "senderPosition": sender}, {
           headers: {
             'Content-Type': 'application/json'
           }
@@ -142,7 +75,7 @@ function broadcastReplicate(dataBody, route, view, metadata,node) {
             return new Promise((resolve, reject) => {
               setTimeout(() => {
                 axios
-                  .put("http://" + address + route, { "value": dataBody.value,"causal-metadata": metadata, "broadcast": true, "node":node }, {
+                  .put("http://" + address + route, { "value": dataBody.value,"causal-metadata": metadata, "broadcast": true, "senderPosition": sender}, {
                     headers: {
                       'Content-Type': 'application/json'
                     }
@@ -155,30 +88,17 @@ function broadcastReplicate(dataBody, route, view, metadata,node) {
                   });
               }, 1000);
             });
-          } else if (response.status === 500) {
-            const deletePromises = [];
-  
-            for (let i = 0; i < view.length; i++) {
-              const deleteAddress = Object.keys(view)[i];
-              if (deleteAddress === ipAddress) {
-                continue;
-              }
-              const deletePromise = axios
-                .delete("http://" + deleteAddress + "/view", { "socket-address": deleteAddress, "broadcast": true }, {
-                  headers: {
-                    'Content-Type': 'application/json'
-                  }
-                });
-              deletePromises.push(deletePromise);
-            }
-  
-            return Promise.all(deletePromises);
           } else {
             return response;
           }
         })
         .catch(function (error) {
-          return Promise.reject(error);
+          if (error.code === 'EHOSTUNREACH') {
+            vectorClock[view[address]] = null
+            delete view[address]
+            const viewIp = Object.keys(view)
+            broadcastUpdate(viewIp,response,"delete")
+          }
         });
   
       promises.push(promise);
@@ -186,17 +106,66 @@ function broadcastReplicate(dataBody, route, view, metadata,node) {
   
     return Promise.all(promises);
   }
+  
 
-
-function broadcastUpdate(viewIp,res,method){
+  async function broadcastViewDelete(viewIp, socketAddress, failures = undefined) {
+    console.log(viewIp,socketAddress,failures)
+    const errAddresses = [];
+    const codes = [];
+    const promises = [];
+    for (let i = 0; i < viewIp.length; i++) {
+        const address = viewIp[i];
+        if (failures !== undefined){
+        if (address === ipAddress || address == socketAddress || failures.includes(address)) {
+            console.log("First condition met")
+            continue
+            }
+        }
+        else if (address === ipAddress || address == socketAddress) {
+        console.log("second condition met")
+        continue
+        }
+        console.log("Trying to send a request to " +  address + " to delete " + socketAddress)
+        const promise = axios
+        .delete("http://" + address + "/view", {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          data: {
+            'socket-address': socketAddress,
+            'broadcast': true
+          },
+          timeout: 1000
+        })
+        .then(function (response) {
+          codes.push(response.status);
+          return response;
+        })
+        .catch(function (error) {
+          errAddresses.push(address);
+          return Promise.reject(error);
+        });
+    
+        promises.push(promise);
+    }
+    
+    await Promise.allSettled(promises);
+    return [errAddresses, codes]; // Return the list of errored addresses and the status codes of the broadcast
+  }
+  
+  
+  
+  
+  
+  
+function broadcastViewPut(viewIp,res,socketAddress,erraddresses){
     const requests = viewIp.map((address) => {
         if (address == ipAddress) {
           return Promise.resolve(); // Skip self-address
         }
         console.log("sending request to " + address);
         return axios.put("http://" + address + "/view", {
-          "view": view,
-          "clock": vectorClock,
+         "socket-address":socketAddress,
           "broadcast": true
         }, {
           headers: {
@@ -214,14 +183,14 @@ function broadcastUpdate(viewIp,res,method){
       Promise.all(requests)
         .then(function (response) {
             // handle success
-            if (method ==="put"){res.status(201).send({"result":"added"})}
-            if (method==="delete"){res.status(201).send({"result":"deleted"})}
+            res.status(201).send({"result":"added"})
         })
         .catch(function (error) {
             // handle error
             console.log(error)
             res.status(500).send({"error": "Internal server error"});
         })
+
 }
 
 
@@ -273,9 +242,9 @@ async function main() {
             if (view[req.body['socket-address']]!==undefined){
                 res.status(200).json({"result":"already present"})
             }else{
-            vectorClock = req.body["clock"]
-            view = req.body["view"]
-            res.status(201).json({"result":"added"})
+                vectorClock.push(0)
+                view[req.body['socket-address']] = vectorClock.length -1
+                res.status(201).json({"result":"added"})
             }
         }else{
         //else we treat it has the origin of the view put request
@@ -288,15 +257,12 @@ async function main() {
         const viewIp = Object.keys(view)
         if (viewIp.length > 1){
             let erraddresses = []
-            broadcastUpdate(viewIp,res,"put")
+            broadcastViewPut(viewIp,res,req.body['socket-address'],erraddresses)
             if (erraddresses.length > 0){
                 erraddresses.forEach(function(address){
                     if (view[address]!==undefined){
-                        vectorClock[view[address]] = null
-                        delete view[req.body['socket-address']]
-                        console.log("Deleted replica from the view: " + address)
+                        broadcastViewDelete(viewIp,res,address)
                 }})
-                
             }
             }else{
                 res.status(201).json({"result":"added"})
@@ -324,67 +290,135 @@ async function main() {
         })
         res.status(200).json({"view":viewList})
     })
-    .delete(function(req,res){
-        if (view[req.body['socket-address']]!==undefined){
-            vectorClock[view[req.body['socket-address']]] = null
-            delete view[req.body['socket-address']]
-            const viewIp = Object.keys(view)
-            broadcastUpdate(viewIp,res,"delete")
+    // .delete(function(req,res){
+    //     if (view[req.body['socket-address']]!==undefined){
+    //         const viewIp = Object.keys(view)
+    //         for (let i=view[req.body['socket-address']]; i<viewIp.length;i++){
+    //             view[viewIp[i]] += -1
+    //         }
+    //         vectorClock.splice(view[req.body['socket-address']],1)
+    //         delete view[req.body['socket-address']]
+    //         if (req.body['broadcast']!==undefined){
+    //             res.status(201).json({"result":"deleted"})
+    //         }else{
+    //         let erraddresses = []
+    //         broadcastViewDelete(viewIp,res,req.body['socket-address'],erraddresses)
+    //         if (erraddresses.length > 0){
+    //             erraddresses.forEach(function(address){
+    //                 if (view[address]!==undefined){
+    //                     broadcastViewDelete(viewIp,res,address)
+    //             }})
+    //         }else{
+    //             res.status(201).json({"result":"deleted"})
+    //         }
+    //     }
+    //     }else{
+    //         res.status(404).json({"error":"View has no such replica"})
+    //     }
+    // })
+    .delete(function (req, res) {
+        console.log("DELETE REQUEST MADE")
+        if (view[req.body['socket-address']] !== undefined) {
+          const viewIp = Object.keys(view);
+          for (let i = view[req.body['socket-address']]; i < viewIp.length; i++) {
+            view[viewIp[i]] += -1;
+          }
+          vectorClock.splice(view[req.body['socket-address']], 1);
+          delete view[req.body['socket-address']];
+          console.log("deleting node " + req.body['socket-address'])
+          console.log("This request is a " + req.body['broadcast'])
+          if (req.body['broadcast'] !== undefined) {
+            console.log("Brodacast has completed")
+            res.status(201).json({ "result": "deleted" });
+          } else {
+            broadcastViewDelete(Object.keys(view), req.body['socket-address'])
+              .then((returnValue) => {
+                let failures = returnValue[0];
+                let successes = returnValue[1];
+                if (failures.length === 0) {
+                  res.status(201).json({ "result": "deleted" });
+                  console.log("Successes " + successes);
+                } else {
+                  console.log("Successes " + successes);
+                  console.log("Failures" + failures);
+                  console.log(returnValue)
+                  console.log(typeof(failures))
+                failures.forEach(function(failure){
+                    console.log("broadcasting to failure " + failure)
+                if (view[failure] !== undefined) {
+                    const viewIp = Object.keys(view);
+                    for (let i = view[failure]; i < viewIp.length; i++) {
+                    view[viewIp[i]] += -1;
+                    }
+                    vectorClock.splice(view[failure], 1);
+                    delete view[failure];
+                    console.log(view)
+                    console.log(vectorClock)
+                    broadcastViewDelete(Object.keys(view), failure, failures)
+                    .then((response) => {
+                        let failures = response[0];
+                        let successes = response[1];
+                        console.log("Successes " + successes);
+                        console.log("Failures" + failures);
+                        return Promise.resolve();
+                    })
+                    .catch((error) => {
+                        console.log(error);
+                        return Promise.reject(error);
+                    });
+                }
 
-        }else{
-            res.status(404).json({"error":"View has no such replica"})
+            })
+            res.status(201).json({ "result": "deleted" });
+            }
+            })
+              .catch((error) => {
+                console.log("Error in broadcastViewDelete: ", error);
+                res.status(500).json({ "error": "An unexpected error occurred" });
+              });
+          }
+        } else {
+          res.status(404).json({ "error": "View has no such replica" });
         }
-    })
-
-    app.route("/debugview")
-    .get(function(req,res){
-        console.log(view)
-        console.log(vectorClock)
-    })
-
-    app.route("/kvs")
-    .get(function(req,res){
-        res.status(200).json(key_store)
-    })
+      });
+      
+      
 
 
     app.route("/kvs/:key")
     .put(function(req,res){
         const metadata = req.body["causal-metadata"]
-        if (req.body['broadcast']!==undefined){
-            vectorClock[req.body["node"]]+=1
-        }else{
-        vectorClock[view[ipAddress]]+=1
-        }
-        console.log("Vector Clock: " + vectorClock)
-        let newClock = maxVectorClock(vectorClock,metadata)
-        console.log("Vector Clock: " + newClock)
         let causality = null
-        if (metadata == 0){
+        if (metadata === 0){
             causality = true
         }else{
+            if (req.body['broadcast']!==undefined){
+            causality = causalConsistent(req.body['causal-metadata'], senderPosition=req.body['senderPosition'])
+            }else{
             causality = causalConsistent(req.body['causal-metadata'])
+            }
         }
-        vectorClock = newClock
         const keys = Object.keys(view)
-        if (causality === true){ 
+        if (causality === true){
             if (req.params.key.length > 50){
-                res.status(400).json({"error" : "Key is too long", "causal-metadata":newClock})
+                res.status(400).json({"error" : "Key is too long"})
             }else{
                 if (req.body["value"]===undefined){
-                    res.status(400).json({"error" : "PUT request does not specify a value","causal-metadata":newClock})
+                    res.status(400).json({"error" : "PUT request does not specify a value"})
                 }else{
                 
                 if (key_store[req.params.key]===undefined){
                     if (req.body['broadcast']!==undefined || keys.length===1){
-                        let newClock = vectorClock[req.body["node"]]+=1
+                        vectorClock  = maxVectorClock(vectorClock,metadata)
                         key_store[req.params.key] = req.body.value
-                        res.status(201).json({"result" : "created","causal-metadata":newClock})
+                        res.status(201).json({"result" : "created","causal-metadata":vectorClock})
                     }else{
+                        vectorClock[view[ipAddress]]+=1
                         key_store[req.params.key] = req.body.value;
-                        broadcastReplicate(req.body, "/kvs/" + req.params.key,view,metadata,view[ipAddress])
+                        let sender = view[ipAddress]
+                        broadcastReplicate(req.body, "/kvs/" + req.params.key,view,vectorClock,sender)
                           .then(function () {
-                            res.status(201).json({ "result": "created", "causal-metadata": newClock });
+                            res.status(201).json({ "result": "created", "causal-metadata": vectorClock});
                           })
                           .catch(function(error){
                             console.log(error)
@@ -392,13 +426,17 @@ async function main() {
                     }
                 }else{
                     if(req.body['broadcast']!==undefined || keys.length===1){
+                        vectorClock = maxVectorClock(vectorClock,metadata)
                         key_store[req.params.key] = req.body.value
-                        res.status(200).json({"result" : "replaced","causal-metadata":newClock})
+                        res.status(200).json({"result" : "replaced","causal-metadata":vectorClock})
                     }else{
                         key_store[req.params.key] = req.body.value
-                        broadcastReplicate(req.body,"/kvs/"+req.params.key,view,metadata)
+                        vectorClock[view[ipAddress]]+=1
+                        key_store[req.params.key] = req.body.value;
+                        let sender = view[ipAddress]
+                        broadcastReplicate(req.body,"/kvs/"+req.params.key,view,vectorClock,sender)
                         .then(function () {
-                            res.status(200).json({"result" : "replaced","causal-metadata":newClock});
+                            res.status(200).json({"result" : "replaced","causal-metadata":vectorClock});
                           })
                           .catch(function(error){
                             console.log(error)
@@ -408,9 +446,12 @@ async function main() {
             }
         }
         }else if (causality ===false){
-            res.status(503).json({"error": "Causal dependencies not satisfied; try again later","causal-metadata":newClock})
+            res.status(503).json({"error": "Causal dependencies not satisfied; try again later"})
         }
     })
+    
+           
+
     .get(function(req,res){
         const metadata = req.body["causal-metadata"]
         // let newClock = maxVectorClock(vectorClock,req.body['causal-metadata'])
@@ -421,42 +462,44 @@ async function main() {
                 causality = causalConsistent(req.body['causal-metadata'])
             }
             if (causality === true){
-                vectorClock[view[ipAddress]]+=1
                 if (key_store[req.params.key]===undefined){
-                    res.status(404).json({"error" : "Key does not exist","causal-metadata":vectorClock})
+                    res.status(404).json({"error" : "Key does not exist"})
                 } else{
                 res.status(200).json({"result" : "found", "value" : key_store[req.params.key], "causal-metadata":vectorClock})
                 }
             }else if (causality ===false){
-                res.status(503).json({"error": "Causal dependencies not satisfied; try again later","causal-metadata":vectorClock})
+                res.status(503).json({"error": "Causal dependencies not satisfied; try again later"})
             }
     })
     .delete(function(req,res){
-        vectorClock[view[ipAddress]]+=1
-        let newClock = maxVectorClock(vectorClock,req.body['causal-metadata'])
+        const metadata = req.body["causal-metadata"]
         let causality = null
-        const keys = Object.keys(view)
-        if (req.body['causal-metadata'] === undefined){
-            causality === false
+        if (metadata === 0){
+            causality = true
         }else{
-            causality = causalConsistent(req.body['causal-metadata'])
-        }
-        vectorClock = newClock
-        if (causality === true){
-        if (key_store[req.params.key]===undefined){
-            res.status(404).json({"error" : "Key does not exist","causal-metadata":newClock})
-        } else{
-            if (req.body['broadcast']!==undefined || keys.length===1){
-            delete key_store[req.params.key]
-            res.status(200).json({"result" : "deleted","causal-metadata":newClock})
+            if (req.body['broadcast']!==undefined){
+            causality = causalConsistent(req.body['causal-metadata'], senderPosition=req.body['senderPosition'])
             }else{
-            delete key_store[req.params.key]
-            broadcastkvsDelete("/kvs/"+req.params.key)
-            res.status(200).json({"result" : "deleted","causal-metadata":newClock})
+            causality = causalConsistent(req.body['causal-metadata'])
             }
         }
+        if (causality === true){
+            vectorClock[view[ipAddress]]+=1
+            let newClock = maxVectorClock(vectorClock,req.body['causal-metadata'])
+            if (key_store[req.params.key]===undefined){
+                res.status(404).json({"error" : "Key does not exist"})
+            } else{
+                if (req.body['broadcast']!==undefined || keys.length===1){
+                delete key_store[req.params.key]
+                res.status(200).json({"result" : "deleted","causal-metadata":newClock})
+                }else{
+                delete key_store[req.params.key]
+                broadcastkvsDelete("/kvs/"+req.params.key)
+                res.status(200).json({"result" : "deleted","causal-metadata":newClock})
+                }
+            }
     }else if (causality === false){
-        res.status(503).json({"error": "Causal dependencies not satisfied; try again later","causal-metadata":newClock})
+        res.status(503).json({"error": "Causal dependencies not satisfied; try again later"})
     }
     })
 
@@ -472,6 +515,7 @@ async function main() {
 // docker run --rm -p 8082:8090 --net=asg2net -e IP_ADDRESS=10.10.0.2:8090 --ip=10.10.0.2 --name replica1 asg3img
 // docker run --rm -p 8083:8090 --net=asg2net -e IP_ADDRESS=10.10.0.3:8090 --ip=10.10.0.3 --name replica2 asg3img
 // docker run --rm -p 8084:8090 --net=asg2net -e IP_ADDRESS=10.10.0.4:8090 --ip=10.10.0.4 --name replica3 asg3img
+// docker run --rm -p 8085:8090 --net=asg2net -e IP_ADDRESS=10.10.0.5:8090 --ip=10.10.0.5 --name replica4 asg3img
 
 
 
