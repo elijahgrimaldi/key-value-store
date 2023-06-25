@@ -142,9 +142,10 @@ function broadcastReplicate(dataBody, route, view, metadata,sender) {
           return response;
         })
         .catch(function (error) {
-          errAddresses.push(address);
-          return Promise.reject(error);
-        });
+            errAddresses.push(address);
+            return Promise.reject(error);
+          });
+          
     
         promises.push(promise);
     }
@@ -158,39 +159,42 @@ function broadcastReplicate(dataBody, route, view, metadata,sender) {
   
   
   
-function broadcastViewPut(viewIp,res,socketAddress,erraddresses){
-    const requests = viewIp.map((address) => {
-        if (address == ipAddress) {
-          return Promise.resolve(); // Skip self-address
-        }
-        console.log("sending request to " + address);
-        return axios.put("http://" + address + "/view", {
-         "socket-address":socketAddress,
-          "broadcast": true
-        }, {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        })
-        .then((response)=>{
-            return response.data
-        })
-        .catch((error)=>{
-            console.log("error sending request to " + address)
-            erraddresses.push(address)
-        })
-      })
-      Promise.all(requests)
+async function broadcastViewPut(viewIp,socketAddress){
+    const errAddresses = [];
+    const codes = [];
+    const promises = [];
+    console.log(viewIp)
+    for (let i = 0; i < viewIp.length; i++) {
+        const address = viewIp[i];
+        if (address === ipAddress) {
+            console.log("First condition met")
+            continue
+            }
+        console.log("Trying to send a request to " +  address + " to put " + socketAddress)
+        const promise = axios
+        .put("http://" + address + "/view", {
+            'socket-address': socketAddress,
+            'broadcast': true
+          }, {
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            timeout: 1000
+          })
+          
         .then(function (response) {
-            // handle success
-            res.status(201).send({"result":"added"})
+          codes.push(response.status);
+          return response;
         })
         .catch(function (error) {
-            // handle error
-            console.log(error)
-            res.status(500).send({"error": "Internal server error"});
-        })
-
+            errAddresses.push(address);
+            return Promise.reject(error);
+          });          
+    
+        promises.push(promise);
+    }
+    await Promise.allSettled(promises)
+    return [errAddresses, codes]; // Return the list of errored addresses and the status codes of the broadcast
 }
 
 
@@ -236,52 +240,65 @@ main().catch(err => console.log(err));
 
 async function main() {
     app.route("/view")
-    .put(function(req,res){
-        //if the request is a broadcast we don't want to chain broadcasts
-        if (req.body['broadcast']!==undefined){
-            if (view[req.body['socket-address']]!==undefined){
-                res.status(200).json({"result":"already present"})
-            }else{
-                vectorClock.push(0)
-                view[req.body['socket-address']] = vectorClock.length -1
-                res.status(201).json({"result":"added"})
-            }
-        }else{
-        //else we treat it has the origin of the view put request
-        if (view[req.body['socket-address']]!==undefined){
-            res.status(200).json({"result":"already present"})
-        }else{
-        //push to the local view and then broadcast the request to all over replicas 
-        vectorClock.push(0)
-        view[req.body['socket-address']] = vectorClock.length -1
-        const viewIp = Object.keys(view)
-        if (viewIp.length > 1){
-            let erraddresses = []
-            broadcastViewPut(viewIp,res,req.body['socket-address'],erraddresses)
-            if (erraddresses.length > 0){
-                erraddresses.forEach(function(address){
-                    if (view[address]!==undefined){
-                        broadcastViewDelete(viewIp,res,address)
-                }})
-            }
-            }else{
-                res.status(201).json({"result":"added"})
-            }
-        
-            // axios.get(Object.keys(view)[0]+"/kvs")
-            //     .then(function (response) {
-            //         // handle success
-            //         key_store = response.data
-            //         res.status(response.status).send(response.data)
-            //     })
-            //     .catch(function (error) {
-            //         // handle error
-            //         res.status(error.response.status).send(error.response.data)
-            //     })
-
+    .put(function(req, res) {
+      // if the request is a broadcast we don't want to chain broadcasts
+      if (req.body['broadcast'] !== undefined) {
+        if (view[req.body['socket-address']] !== undefined) {
+          res.status(200).json({ "result": "already present" });
+        } else {
+          vectorClock.push(0);
+          view[req.body['socket-address']] = vectorClock.length - 1;
+          res.status(201).json({ "result": "added" });
         }
+      } else {
+        // else we treat it as the origin of the view put request
+        if (view[req.body['socket-address']] !== undefined) {
+          res.status(200).json({ "result": "already present" });
+        } else {
+        // push to the local view and then broadcast the request to all over replicas
+        vectorClock.push(0);
+        view[req.body['socket-address']] = vectorClock.length - 1;
+        const viewIp = Object.keys(view);
+        broadcastViewPut(viewIp, req.body['socket-address'])
+            .then((returnValue) => {
+            let failures = returnValue[0];
+            let successes = returnValue[1];
+            console.log("Successful replications " + successes);
+            console.log("Down nodes detected and deleted  " + failures);
+            if (failures.length !== 0) {
+                failures.forEach(function(failure) {
+                if (view[failure] !== undefined) {
+                    const viewIp = Object.keys(view);
+                    for (let i = view[failure]; i < viewIp.length; i++) {
+                    view[viewIp[i]] += -1;
+                    }
+                    vectorClock.splice(view[failure], 1);
+                    delete view[failure];
+                    broadcastViewDelete(Object.keys(view), failure, failures)
+                    .then((response) => {
+                        let failures = response[0];
+                        let successes = response[1];
+                        console.log("Successes " + successes);
+                        console.log("Failures" + failures);
+                        return Promise.resolve();
+                    })
+                    .catch((error) => {
+                        console.log(error);
+                        return Promise.reject(error);
+                    });
+                }
+                });
             }
-        })
+            })
+            .catch((error) => {
+            console.log("Error in broadcastViewDelete: ", error);
+            res.status(500).json({ "error": "An unexpected error occurred" });
+            });
+        res.status(201).json({ "result": "added" });
+        }
+      }
+    })
+  
     .get(function(req,res){
         const viewList = []
         const keys = Object.keys(view)
@@ -290,34 +307,7 @@ async function main() {
         })
         res.status(200).json({"view":viewList})
     })
-    // .delete(function(req,res){
-    //     if (view[req.body['socket-address']]!==undefined){
-    //         const viewIp = Object.keys(view)
-    //         for (let i=view[req.body['socket-address']]; i<viewIp.length;i++){
-    //             view[viewIp[i]] += -1
-    //         }
-    //         vectorClock.splice(view[req.body['socket-address']],1)
-    //         delete view[req.body['socket-address']]
-    //         if (req.body['broadcast']!==undefined){
-    //             res.status(201).json({"result":"deleted"})
-    //         }else{
-    //         let erraddresses = []
-    //         broadcastViewDelete(viewIp,res,req.body['socket-address'],erraddresses)
-    //         if (erraddresses.length > 0){
-    //             erraddresses.forEach(function(address){
-    //                 if (view[address]!==undefined){
-    //                     broadcastViewDelete(viewIp,res,address)
-    //             }})
-    //         }else{
-    //             res.status(201).json({"result":"deleted"})
-    //         }
-    //     }
-    //     }else{
-    //         res.status(404).json({"error":"View has no such replica"})
-    //     }
-    // })
     .delete(function (req, res) {
-        console.log("DELETE REQUEST MADE")
         if (view[req.body['socket-address']] !== undefined) {
           const viewIp = Object.keys(view);
           for (let i = view[req.body['socket-address']]; i < viewIp.length; i++) {
@@ -325,26 +315,17 @@ async function main() {
           }
           vectorClock.splice(view[req.body['socket-address']], 1);
           delete view[req.body['socket-address']];
-          console.log("deleting node " + req.body['socket-address'])
-          console.log("This request is a " + req.body['broadcast'])
           if (req.body['broadcast'] !== undefined) {
-            console.log("Brodacast has completed")
             res.status(201).json({ "result": "deleted" });
           } else {
             broadcastViewDelete(Object.keys(view), req.body['socket-address'])
               .then((returnValue) => {
                 let failures = returnValue[0];
                 let successes = returnValue[1];
-                if (failures.length === 0) {
-                  res.status(201).json({ "result": "deleted" });
-                  console.log("Successes " + successes);
-                } else {
-                  console.log("Successes " + successes);
-                  console.log("Failures" + failures);
-                  console.log(returnValue)
-                  console.log(typeof(failures))
+                console.log("Successful replications " + successes)
+                console.log("Down nodes detected and deleted  " + failures)
+                if (failures.length !== 0) {
                 failures.forEach(function(failure){
-                    console.log("broadcasting to failure " + failure)
                 if (view[failure] !== undefined) {
                     const viewIp = Object.keys(view);
                     for (let i = view[failure]; i < viewIp.length; i++) {
@@ -352,8 +333,6 @@ async function main() {
                     }
                     vectorClock.splice(view[failure], 1);
                     delete view[failure];
-                    console.log(view)
-                    console.log(vectorClock)
                     broadcastViewDelete(Object.keys(view), failure, failures)
                     .then((response) => {
                         let failures = response[0];
