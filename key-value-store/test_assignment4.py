@@ -320,6 +320,7 @@ class TestHW4(unittest.TestCase):
     def test_g_add_new_node(self):
 
         print('>>> Start up {}'.format(grace))
+        # sleep(5000)
         runInstance(grace, all_instances + [grace])
 
         print('... Give time to bind ports, update views, etc.')
@@ -335,12 +336,17 @@ class TestHW4(unittest.TestCase):
 
         assigned_shard = random.choice(self.shard_ids)
         shard_assigner = random.choice(all_instances)
-
+        # response = requests.get('http://localhost:8088/kvsdebug')
+        # print("First check " + assigned_shard)
+        # print(response.json())
         print('>>> Assign {} to shard {} with a request to {}'.format(grace, assigned_shard, shard_assigner))
         response = requests.put('http://{}:{}/shard/add-member/{}'.format(hostname, shard_assigner.published_port, assigned_shard),
                 json={'socket-address': grace.socket_address})
         self.assertEqual(response.status_code, 200)
         del shard_assigner
+        # response = requests.get('http://localhost:8088/kvsdebug')
+        # print(assigned_shard)
+        # print(response.json())
 
         print('... Give time to replicate keys.')
         sleep(5)
@@ -370,6 +376,7 @@ class TestHW4(unittest.TestCase):
         for instance in all_instances: 
             with self.subTest(msg='at instance {}'.format(instance)):
                 response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, instance.published_port, assigned_shard))
+                print(hostname,instance.published_port,assigned_shard)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('shard-key-count', response.json())
                 self.assertEqual(response.json()['shard-key-count'], reported_key_count)
@@ -448,7 +455,9 @@ class TestHW4(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('shard-key-count', response.json())
                 shard_key_counts[shard_id] = response.json()['shard-key-count']
+                print(shard_key_counts[shard_id], shard_id)
                 self.assertGreater(shard_key_counts[shard_id], 1)
+
 
         self.assertEqual(sum(shard_key_counts.values()), self.key_count,
                 msg='Sum of key-counts-in-shards must equal total-keys')

@@ -1,10 +1,9 @@
 const express = require("express")
 const axios = require('axios')
 const bodyParser = require("body-parser")
-const HashRing = require('hashring')
+const fnv1a = require('fnv1a')
 const { response } = require("express")
 const app = express()
-  
 // Middleware to parse JSON bodies with custom reviver function
 app.use(bodyParser.json())
 let key_store = {}
@@ -110,7 +109,7 @@ async function broadcastViewPut(viewIp,socketAddress){
     for (let i = 0; i < viewIp.length; i++) {
         const address = viewIp[i];
         if (address === ipAddress) {
-            console.log("First condition met")
+            // console.log("First condition met")
             continue
             }
         // console.log("Trying to send a request to " +  address + " to put " + socketAddress)
@@ -250,7 +249,7 @@ async function broadcastkvsDelete(dataBody, route, view, metadata,sender, localS
           }
         })
         .catch(function (error) {
-          console.log("Error in the replication " + error.response.status)
+          // console.log("Error in the replication " + error.response.status)
           if (error.response.status!==410){
             errAddresses.push(address);
           }
@@ -269,6 +268,7 @@ async function broadcastkvsDelete(dataBody, route, view, metadata,sender, localS
     shardIDs = []
     let count = 0
     let shardAmount = 0
+    console.log("shardCount: " + shardCount)
     if (shardCount !== undefined){
       shardAmount = shardCount
       if (shardAmount < 2){
@@ -280,6 +280,7 @@ async function broadcastkvsDelete(dataBody, route, view, metadata,sender, localS
       }
       shardAmount = Math.floor(view.length / process.env.SHARD_COUNT)
     }
+    console.log("shardAmount: "+shardAmount)
     let shardNum = 0
     while (count < view.length){
       for (let i=count;i<count+shardAmount;i++){
@@ -289,6 +290,7 @@ async function broadcastkvsDelete(dataBody, route, view, metadata,sender, localS
         }
 
       }
+      console.log("shards: " + shards)
       shardIDs.push("s" + String(shardNum))
       shardNum+=1
       count+=shardAmount
@@ -299,8 +301,7 @@ async function broadcastkvsDelete(dataBody, route, view, metadata,sender, localS
   }
   
   async function reshard(view,shardCount){
-    console.log("Beginning the reshard...")
-    ring = new HashRing(view, 'md5', {replicas : 10})
+    // console.log("Beginning the reshard...")
     let shardAmount = shardCount
     let visited = {}
     let combinedStore = {}
@@ -311,13 +312,15 @@ async function broadcastkvsDelete(dataBody, route, view, metadata,sender, localS
       }
       try {
         const response = await axios.get("http://" + address + "/store")
+        console.log("length of response " + Object.keys(response.data).length)
         combinedStore = Object.assign({}, combinedStore, response.data)
+        console.log("length of the combined store after " + Object.keys(combinedStore).length)
         visited[shards[address]]=1
       } catch (error) {
         throw error;
       }
     }
-    console.log("Key stores recieved from each node....")
+    // console.log("Key stores recieved from each node....")
     for (let i = 0;i<view.length;i++){
       let address = view[i]
       try {
@@ -326,8 +329,8 @@ async function broadcastkvsDelete(dataBody, route, view, metadata,sender, localS
         throw error;
       }
     }
-    console.log("key stores deleted at each node....")
-    console.log("Keys redistributed to each node...")
+    // console.log("key stores deleted at each node....")
+    // console.log("Keys redistributed to each node...")
     for (let i = 0;i<view.length;i++){
       let address = view[i]
       try {
@@ -339,9 +342,14 @@ async function broadcastkvsDelete(dataBody, route, view, metadata,sender, localS
     let storeKeys = Object.keys(combinedStore)
     for (let i = 0; i<storeKeys.length;i++){
       let key = storeKeys[i]
-      let address = ring.getNode(key)
+      let address = generateShardNode(key)
       try {
         const response = await axios.put("http://" + address + "/store", {"key": key,"value" : combinedStore[key]})
+        for (let i=0; i<view.length;i++){
+          if (shards[address] === shards[view[i]] && view[i]!==address){
+            const response = await axios.put("http://" + view[i] + "/store", {"key": key,"value" : combinedStore[key]})
+          }
+        }
       } catch (error) {
         throw error;
       }
@@ -350,7 +358,17 @@ async function broadcastkvsDelete(dataBody, route, view, metadata,sender, localS
 
 
   function generateShardNode(userKey) {
-    const node = ring.get(userKey)
+    let keys = Object.keys(view)
+    let node = null
+    const hash = fnv1a(userKey) % shardIDs.length
+    for (let i = 0;i<keys.length;i++){
+      let address = keys[i]
+      if (shards[address] === shardIDs[hash]){
+        node = address
+        break
+      }
+    }
+
     return node
   }
 
@@ -365,10 +383,10 @@ async function broadcastkvsDelete(dataBody, route, view, metadata,sender, localS
   }
 
   async function delegatePut(dataBody,address,route){
-    console.log("DELEGATING PUT WITH ")  
-    console.log("DATABODY " + dataBody)
-    console.log("ADDRESS " + address)
-    console.log("ROUTE " + route)
+    // console.log("DELEGATING PUT WITH ")  
+    // console.log("DATABODY " + dataBody)
+    // console.log("ADDRESS " + address)
+    // console.log("ROUTE " + route)
     const response = await axios.put("http://" + address + route, { "value": dataBody.value, "causal-metadata": dataBody['causal-metadata']}, {
     headers: {
       'Content-Type': 'application/json'
@@ -425,10 +443,13 @@ async function broadcastkvsDelete(dataBody, route, view, metadata,sender, localS
   }
   async function broadcastAddMember(ID,socketaddress){
     let keys = Object.keys(view)
-    console.log("Attempting keys are " + keys)
+    // console.log("Attempting keys are " + keys)
     for (let i = 0; i<keys.length;i++){
       let address = keys[i]
-      console.log(address)
+      if (address === ipAddress){
+        continue
+      }
+      // console.log(address)
     try{
       const response = await axios.put("http://" + address + "/shard/add-member/" + ID, {"socket-address":socketaddress,"broadcast":true})
     }catch(error){
@@ -444,7 +465,6 @@ let vectorClock = []
 let envView = process.env.VIEW.split(",")
 let shards = {}
 let shardIDs = []
-let ring = new HashRing(envView, 'md5', {replicas : 10})
 const ipAddress = process.env.SOCKET_ADDRESS
 // console.log("This replica is running on " + ipAddress)
 for (let i =0;i<envView.length;i++){
@@ -458,7 +478,7 @@ async function getCaughtUp(curView) {
     try {
       const response = await axios.get("http://" + address + "/catchup");
       if (response.data['view'].length !== envView.length) {
-        console.log("Added condition met");
+        // console.log("Added condition met");
         addedNode = true;
       }
       if (response.data['causal-metadata'] !== undefined) {
@@ -477,6 +497,13 @@ async function getCaughtUp(curView) {
 async function startup() {
   let added = await getCaughtUp(envView);
   broadcastViewPut(envView, ipAddress);
+  if (added == true){
+    const response = await axios.get("http://"+envView[0]+"/kvsdebug")
+    let data = response.data
+    shards = data['shards']
+    shardIDs = data['shard IDs']
+    shardCode = null
+  }else{
   shardCode = shard(envView);
   local_shard_id = shards[ipAddress];
   let keys = envView
@@ -496,11 +523,12 @@ async function startup() {
     console.log("Unable to start with the requested shard amount, please try again");
   } else {
     if (added === true) {
-      console.log("This is an added node");
+      // console.log("This is an added node");
       //await reshard(envView, process.env.SHARD_COUNT);
     }
     console.log("System sharded");
   }
+}
 }
 
 startup().catch((error) => {
@@ -538,8 +566,8 @@ async function main() {
             .then((returnValue) => {
             let failures = returnValue[0];
             let successes = returnValue[1];
-            console.log("Successful replications " + successes);
-            console.log("Down nodes detected and deleted  " + failures);
+            // console.log("Successful replications " + successes);
+            // console.log("Down nodes detected and deleted  " + failures);
             if (failures.length !== 0) {
               downDetectionDelete(failures)
             }
@@ -575,14 +603,14 @@ async function main() {
               .then((returnValue) => {
                 let failures = returnValue[0];
                 let successes = returnValue[1];
-                console.log("Successful replications " + successes)
-                console.log("Down nodes detected and deleted  " + failures)
+                // console.log("Successful replications " + successes)
+                // console.log("Down nodes detected and deleted  " + failures)
                 if (failures.length !== 0) {
                   downDetectionDelete(failures)
               }
             })
               .catch((error) => {
-                console.log("Error in broadcastViewDelete: ", error);
+                // console.log("Error in broadcastViewDelete: ", error);
                 res.status(500).json({ "error": "An unexpected error occurred" });
               });
               res.status(201).json({ "result": "deleted" });
@@ -598,6 +626,18 @@ async function main() {
       res.send(key_store)
     })
     
+    app.route("/kvsdebug")
+    .get(function(req, res) {
+      let keyslength = Object.keys(key_store).length;
+      let data = {
+        "key-length": keyslength,
+        "shard_id": local_shard_id,
+        "shard code": shardCode,
+        "shards" : shards,
+        "shard IDs" : shardIDs
+      };
+      res.json(data);
+    });
     app.route("/kvs/:key")
     .put(async function(req, res) {
     const metadata = req.body["causal-metadata"];
@@ -623,7 +663,7 @@ async function main() {
         } else {
             if (key_store[req.params.key] === undefined) {
             if (req.body['broadcast'] !== undefined || keys.length === 1) {
-                console.log("Put broadcasted correctly to " + ipAddress)
+                // console.log("Put broadcasted correctly to " + ipAddress)
                 vectorClock = maxVectorClock(vectorClock, metadata)
                 if (req.body['shard']===local_shard_id){
                 key_store[req.params.key] = req.body.value;
@@ -640,15 +680,15 @@ async function main() {
                 .then(function(returnValue) {
                     let failures = returnValue[0];
                     let successes = returnValue[1];
-                    console.log("Successful replications " + successes);
-                    console.log("Down nodes detected and deleted  " + failures);
+                    // console.log("Successful replications " + successes);
+                    // console.log("Down nodes detected and deleted  " + failures);
                     if (failures.length !== 0) {
                       downDetectionDelete(failures)
                     }
                     res.status(201).json({ "result": "created", "causal-metadata": vectorClock });
                 })
                 .catch(function(error) {
-                    console.log(error);
+                    // console.log(error);
                 });
             }
             } else {
@@ -669,15 +709,15 @@ async function main() {
                 .then(function(returnValue) {
                     let failures = returnValue[0];
                     let successes = returnValue[1];
-                    console.log("Successful replications " + successes);
-                    console.log("Down nodes detected and deleted  " + failures);
+                    // console.log("Successful replications " + successes);
+                    // console.log("Down nodes detected and deleted  " + failures);
                     if (failures.length !== 0) {
                       downDetectionDelete(failures)
                     }
                     res.status(200).json({ "result": "updated", "causal-metadata": vectorClock });
                 })
                 .catch(function(error) {
-                    console.log(error);
+                    // console.log(error);
                 });
             }
             }
@@ -759,8 +799,8 @@ async function main() {
                 .then(function(returnValue) {
                     let failures = returnValue[0];
                     let successes = returnValue[1];
-                    console.log("Successful replications " + successes);
-                    console.log("Down nodes detected and deleted  " + failures);
+                    // console.log("Successful replications " + successes);
+                    // console.log("Down nodes detected and deleted  " + failures);
                     if (failures.length !== 0) {
                       downDetectionDelete(failures)
                     }
@@ -834,17 +874,25 @@ async function main() {
       app.route("/shard/add-member/:ID")
       .put(async function(req,res){
         if (req.body['socket-address'] === ipAddress){
+          shards[ipAddress] = req.params.ID
           local_shard_id = req.params.ID
           let keys = Object.keys(view)
           for (let i =0; i<keys.length;i++){
             let address = keys[i]
-            if (shards[address] === req.params.ID){
+            if (address === ipAddress){
+              continue
+            }
+            if (shards[address] === local_shard_id){
+              console.log("add member address " + address)
+              console.log("address shard " + shards[address])
+              console.log("local shard id " + local_shard_id)
               const response = await axios.get("http://"+address+"/kvs")
               key_store = response.data
               break
             }
           }
-        }
+          res.status(200).send()
+        }else{
         if (req.body['broadcast'] !== undefined){
           shards[req.body['socket-address']] = req.params.ID
           res.status(200).send()
@@ -862,18 +910,20 @@ async function main() {
         })
         if (foundID === true && foundIP === true){
           shards[req.body['socket-address']] = req.params.ID
+          console.log("broadcasting the add member")
           const response = await broadcastAddMember(req.params.ID,req.body['socket-address'])
           res.status(200).json({"result":"node added to shard"})
         }else{
           res.status(400).send()
         }
       }
+    }
       })
       app.route("/shard/reshard")
       .put(async function(req,res){
         let keys = Object.keys(view)
         shardAmount = Math.floor(keys.length/req.body['shard-count'])
-        console.log("Shard Amount: " + shardAmount)
+        // console.log("Shard Amount: " + shardAmount)
         if (shardAmount < 2){
           res.status(400).json({"error": "Not enough nodes to provide fault tolerance withrequested shard count"})
         }else{
@@ -884,7 +934,7 @@ async function main() {
 
       app.route("/store")
       .get(function(req,res){
-        res.send(key_store)
+        res.json(key_store)
       })
       .delete(function(req,res){
         key_store = {}
