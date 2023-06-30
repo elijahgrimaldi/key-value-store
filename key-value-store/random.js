@@ -1,17 +1,49 @@
-const hashring = require('hashring');
-
-// Define the list of nodes in the ring
-const nodes = ['10.10.0.1:8090', '10.10.0.2:8090', '10.10.0.3:8090', '10.10.0.4:8090', '10.10.0.5:8090'];
-
-// Create the hashring instance
-const ring = new hashring(nodes, 'md5',{replicas:10});
-
-// Get the position of a node on the ring
-const nodePosition = ring.get('10.10.0.3:8090');
-console.log('Node position:', nodePosition);
-
-// Get the position of a key on the ring
-const keyPosition = ring.get('myKey');
-console.log('Key position:', keyPosition);
-console.log(ring.continuum())
-console.log()
+class HashRing {
+    constructor(nodes = [], replicas = 3) {
+      this.nodes = [];
+      this.replicas = replicas;
+      this.ring = {};
+  
+      for (const node of nodes) {
+        this.addNode(node);
+      }
+    }
+  
+    addNode(node) {
+      this.nodes.push(node);
+      for (let i = 0; i < this.replicas; i++) {
+        const key = this.hash(`${node}-${i}`);
+        this.ring[key] = node;
+      }
+    }
+  
+    removeNode(node) {
+      this.nodes = this.nodes.filter((n) => n !== node);
+      for (let i = 0; i < this.replicas; i++) {
+        const key = this.hash(`${node}-${i}`);
+        delete this.ring[key];
+      }
+    }
+  
+    getNode(key) {
+      if (this.nodes.length === 0) {
+        return null;
+      }
+  
+      const hashKey = this.hash(key);
+      const sortedKeys = Object.keys(this.ring).sort();
+  
+      for (const ringKey of sortedKeys) {
+        if (hashKey <= ringKey) {
+          return this.ring[ringKey];
+        }
+      }
+  
+      return this.ring[sortedKeys[0]];
+    }
+  
+    hash(key) {
+      return md5(key); // Use MD5 hash function
+    }
+  }
+  
