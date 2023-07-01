@@ -1,3 +1,10 @@
+
+/*
+ * Elijah Grimaldi <eligrimaldi@berkeley.edu>
+ * All rights reserved. (c) 2023
+ */
+
+
 const express = require("express")
 const axios = require('axios')
 const bodyParser = require("body-parser")
